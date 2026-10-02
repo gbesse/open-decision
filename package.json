@@ -4,12 +4,27 @@
   "description": "Capability-aware, vendor-neutral decision runtime for TypeSafe Jev and local decision engines.",
   "type": "module",
   "license": "MIT",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "bin": { "open-decision": "./dist/cli.js" },
-  "files": ["dist", "examples", "README.md", "LICENSE", "SECURITY.md"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "open-decision": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc --noEmit",
@@ -17,10 +32,28 @@
     "release:check": "npm run check && npm test && npm run build && npm pack --dry-run",
     "prepack": "npm run build"
   },
-  "devDependencies": { "@types/node": "^24.5.2", "tsx": "^4.20.5", "typescript": "^5.9.2" },
-  "repository": { "type": "git", "url": "git+https://github.com/gbesse/open-decision.git" },
-  "bugs": { "url": "https://github.com/gbesse/open-decision/issues" },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gbesse/open-decision.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gbesse/open-decision/issues"
+  },
   "homepage": "https://github.com/gbesse/open-decision#readme",
-  "publishConfig": { "access": "public" },
-  "keywords": ["decision-api", "jev", "system-one", "ai-routing", "llm", "typescript"]
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "decision-api",
+    "jev",
+    "system-one",
+    "ai-routing",
+    "llm",
+    "typescript"
+  ]
 }
