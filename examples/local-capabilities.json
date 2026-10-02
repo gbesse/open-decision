@@ -1,0 +1,8 @@
+{
+  "provider": "local-fixture",
+  "adapterVersion": "1.0.0",
+  "modalities": ["text"],
+  "questionTypes": ["choice", "boolean"],
+  "probabilities": true,
+  "dataLocality": "local"
+}

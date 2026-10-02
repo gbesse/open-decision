@@ -1,0 +1,10 @@
+{
+  "state": { "message": "Please refund the duplicate invoice" },
+  "questions": {
+    "route": {
+      "type": "choice",
+      "instructions": "Select the operational route supported by the message.",
+      "criteria": { "refund": "Explicit refund request", "other": "Anything else" }
+    }
+  }
+}
