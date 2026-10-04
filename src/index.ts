@@ -231,3 +231,151 @@ export function fingerprint(value: unknown): string {
   const canonical = (input: unknown): unknown => Array.isArray(input) ? input.map(canonical) : input && typeof input === "object" ? Object.fromEntries(Object.entries(input).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, canonical(v)])) : input;
   return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
 }
+
+export interface QueueCallOptions {
+  signal?: AbortSignal;
+  priority?: number;
+  timeoutMs?: number;
+  controls?: Record<string, unknown>;
+  requirements?: Requirements;
+  lane?: string;
+}
+
+export interface DecisionQueueOptions {
+  decide: (request: DecisionRequest, options?: { signal?: AbortSignal; controls?: Record<string, unknown>; requirements?: Requirements }) => Promise<DecisionResult & { compatibility?: CompatibilityReport }>;
+  maxBatchSize?: number;
+  maxWaitMs?: number;
+  maxPending?: number;
+  concurrency?: number;
+}
+
+interface QueuedDecision {
+  id: string;
+  request: DecisionRequest;
+  options: QueueCallOptions;
+  resolve: (result: DecisionResult & { compatibility?: CompatibilityReport }) => void;
+  reject: (error: unknown) => void;
+  enqueuedAt: number;
+  settled: boolean;
+}
+
+export class DecisionQueue {
+  readonly maxBatchSize: number;
+  readonly maxWaitMs: number;
+  readonly maxPending: number;
+  readonly concurrency: number;
+  #decide: DecisionQueueOptions["decide"];
+  #pending: QueuedDecision[] = [];
+  #timer: NodeJS.Timeout | undefined;
+  #active = 0;
+  #closed = false;
+
+  constructor(options: DecisionQueueOptions) {
+    this.#decide = options.decide;
+    this.maxBatchSize = options.maxBatchSize ?? 16;
+    this.maxWaitMs = options.maxWaitMs ?? 5;
+    this.maxPending = options.maxPending ?? 1_000;
+    this.concurrency = options.concurrency ?? 1;
+    assert(Number.isInteger(this.maxBatchSize) && this.maxBatchSize > 0, "maxBatchSize must be positive");
+    assert(Number.isInteger(this.maxWaitMs) && this.maxWaitMs >= 0, "maxWaitMs cannot be negative");
+    assert(Number.isInteger(this.maxPending) && this.maxPending >= this.maxBatchSize, "maxPending must be at least maxBatchSize");
+    assert(Number.isInteger(this.concurrency) && this.concurrency > 0, "concurrency must be positive");
+  }
+
+  get stats(): { pending: number; active: number; closed: boolean } {
+    return { pending: this.#pending.filter(item => !item.settled).length, active: this.#active, closed: this.#closed };
+  }
+
+  enqueue(request: DecisionRequest, options: QueueCallOptions = {}): Promise<DecisionResult & { compatibility?: CompatibilityReport }> {
+    validateRequest(request);
+    assert(!this.#closed, "Decision queue is closed");
+    assert(this.stats.pending < this.maxPending, "Decision queue is full");
+    if (options.signal?.aborted) return Promise.reject(options.signal.reason ?? new Error("Decision cancelled"));
+    return new Promise((resolve, reject) => {
+      const item: QueuedDecision = { id: randomUUID(), request: structuredClone(request), options, resolve, reject, enqueuedAt: Date.now(), settled: false };
+      const cancel = () => this.#settle(item, () => reject(options.signal?.reason ?? new Error("Decision cancelled")));
+      options.signal?.addEventListener("abort", cancel, { once: true });
+      this.#pending.push(item);
+      this.#pending.sort((a, b) => (b.options.priority ?? 0) - (a.options.priority ?? 0) || a.enqueuedAt - b.enqueuedAt);
+      if (this.stats.pending >= this.maxBatchSize || this.maxWaitMs === 0) void this.flush();
+      else if (!this.#timer) this.#timer = setTimeout(() => { this.#timer = undefined; void this.flush(); }, this.maxWaitMs);
+    });
+  }
+
+  async flush(): Promise<void> {
+    if (this.#timer) { clearTimeout(this.#timer); this.#timer = undefined; }
+    while (this.#active < this.concurrency) {
+      const seed = this.#pending.find(item => !item.settled);
+      if (!seed) return;
+      const key = queueKey(seed);
+      const batch = this.#pending.filter(item => !item.settled && queueKey(item) === key).slice(0, this.maxBatchSize);
+      this.#pending = this.#pending.filter(item => !batch.includes(item));
+      this.#active++;
+      void this.#run(batch).finally(() => { this.#active--; void this.flush(); });
+    }
+  }
+
+  async drain(): Promise<void> {
+    await this.flush();
+    while (this.#active > 0 || this.stats.pending > 0) await new Promise(resolve => setTimeout(resolve, 1));
+  }
+
+  close(error: Error = new Error("Decision queue closed")): void {
+    this.#closed = true;
+    if (this.#timer) clearTimeout(this.#timer);
+    this.#timer = undefined;
+    for (const item of this.#pending) this.#settle(item, () => item.reject(error));
+    this.#pending = [];
+  }
+
+  async #run(batch: QueuedDecision[]): Promise<void> {
+    const live = batch.filter(item => !item.settled && !item.options.signal?.aborted);
+    if (!live.length) return;
+    const questions: Record<string, DecisionQuestion> = {};
+    const mapping = new Map<string, { item: QueuedDecision; original: string }>();
+    for (const item of live) for (const [name, question] of Object.entries(item.request.questions)) {
+      const merged = `${item.id}:${name}`;
+      questions[merged] = question;
+      mapping.set(merged, { item, original: name });
+    }
+    const seed = live[0]!;
+    const controller = new AbortController();
+    const timeoutMs = Math.min(...live.map(item => item.options.timeoutMs ?? 30_000));
+    const timeout = setTimeout(() => controller.abort(new Error("Decision batch timed out")), timeoutMs);
+    try {
+      const result = await this.#decide({ ...seed.request, questions }, { signal: controller.signal, ...(seed.options.controls ? { controls: seed.options.controls } : {}), ...(seed.options.requirements ? { requirements: seed.options.requirements } : {}) });
+      const answersByItem = new Map<QueuedDecision, Record<string, DecisionAnswer>>();
+      for (const [merged, answer] of Object.entries(result.answers)) {
+        const target = mapping.get(merged);
+        if (!target) continue;
+        const answers = answersByItem.get(target.item) ?? {};
+        answers[target.original] = answer;
+        answersByItem.set(target.item, answers);
+      }
+      const batchFingerprint = fingerprint({ state: seed.request.state, questions, provider: result.provider, model: result.model });
+      for (const item of live) this.#settle(item, () => {
+        const split = { ...result, id: item.id, answers: answersByItem.get(item) ?? {}, raw: { batchId: result.id, batchSize: live.length, batchFingerprint } };
+        validateResult(item.request, split);
+        item.resolve(split);
+      });
+    } catch (error) {
+      for (const item of live) this.#settle(item, () => item.reject(error));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  #settle(item: QueuedDecision, action: () => void): void {
+    if (item.settled) return;
+    item.settled = true;
+    action();
+  }
+}
+
+function queueKey(item: QueuedDecision): string {
+  return fingerprint({ model: item.request.model ?? null, state: item.request.state, modalities: item.request.modalities ?? ["text"], metadata: item.request.metadata ?? {}, controls: item.options.controls ?? {}, requirements: item.options.requirements ?? {}, lane: item.options.lane ?? "default" });
+}
+
+export function createDecisionQueue(options: DecisionQueueOptions): DecisionQueue {
+  return new DecisionQueue(options);
+}

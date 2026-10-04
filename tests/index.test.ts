@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createDecisionClient, createHttpProvider, inspectCompatibility, selectProvider, validateResult, type DecisionProvider, type DecisionRequest } from "../src/index.js";
+import { createDecisionClient, createDecisionQueue, createHttpProvider, inspectCompatibility, selectProvider, validateResult, type DecisionProvider, type DecisionRequest } from "../src/index.js";
 
 const request: DecisionRequest = { state: { text: "refund requested" }, questions: { route: { type: "choice", instructions: "Choose the route", criteria: { refund: "Refund", other: "Other" } } } };
 const provider = (name: string, locality: "local" | "remote", price?: number): DecisionProvider => ({
@@ -41,4 +41,30 @@ test("generic HTTP adapter uses explicit codecs", async () => {
   const result = await adapter.decide(request);
   assert.match(body, /payload/);
   assert.equal(result.answers.route?.value, "refund");
+});
+
+test("queue coalesces compatible requests and splits receipts", async () => {
+  let calls = 0;
+  let questionCount = 0;
+  const queue = createDecisionQueue({ maxWaitMs: 20, decide: async batch => {
+    calls++;
+    questionCount = Object.keys(batch.questions).length;
+    return { id: "batch-1", provider: "fixture", model: "fixture", latencyMs: 2, answers: Object.fromEntries(Object.entries(batch.questions).map(([name, question]) => [name, { type: question.type, value: "refund" }])) };
+  } });
+  const [a, b] = await Promise.all([queue.enqueue(request), queue.enqueue({ ...request, questions: { escalation: request.questions.route! } })]);
+  assert.equal(calls, 1);
+  assert.equal(questionCount, 2);
+  assert.deepEqual(Object.keys(a.answers), ["route"]);
+  assert.deepEqual(Object.keys(b.answers), ["escalation"]);
+  assert.equal((a.raw as { batchSize: number }).batchSize, 2);
+});
+
+test("queue keeps different states in separate batches", async () => {
+  let calls = 0;
+  const queue = createDecisionQueue({ maxWaitMs: 0, maxBatchSize: 1, maxPending: 1, decide: async batch => {
+    calls++;
+    return { id: String(calls), provider: "fixture", model: "fixture", latencyMs: 0, answers: Object.fromEntries(Object.entries(batch.questions).map(([name, question]) => [name, { type: question.type, value: "refund" }])) };
+  } });
+  await Promise.all([queue.enqueue(request), queue.enqueue({ ...request, state: { text: "other" } })]);
+  assert.equal(calls, 2);
 });

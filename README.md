@@ -34,6 +34,34 @@ const result = await client.decide({
 
 `createHttpProvider` supports local and future hosted APIs through explicit encode/decode functions. No undocumented OpenAI Decisions endpoint is hard-coded: add an adapter when its public contract is available.
 
+### Queue and coalescing
+
+`createDecisionQueue` batches independent questions that share the same model,
+state, modalities, metadata, controls, requirements and lane. One provider call
+is split back into per-caller results with a batch receipt.
+
+```ts
+import { createDecisionQueue } from "@gbesse/open-decision";
+
+const queue = createDecisionQueue({
+  decide: (request, options) => client.decide(request, options),
+  maxBatchSize: 16,
+  maxWaitMs: 5,
+  maxPending: 1000,
+  concurrency: 1,
+});
+
+const result = await queue.enqueue(request, {
+  priority: 10,
+  timeoutMs: 2_000,
+  lane: "permissions",
+});
+```
+
+The queue supports cancellation, deadlines, bounded pending work and explicit
+provider concurrency. Batching is conservative: calls with different state or
+controls never share a provider request.
+
 ## CLI
 
 ```sh

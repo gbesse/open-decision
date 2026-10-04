@@ -1,6 +1,6 @@
 {
   "name": "@gbesse/open-decision",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Capability-aware, vendor-neutral decision runtime for TypeSafe Jev and local decision engines.",
   "type": "module",
   "license": "MIT",
