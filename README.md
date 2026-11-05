@@ -85,3 +85,12 @@ npm run release:check
 ```
 
 MIT licensed. Open Decision is independent of TypeSafe and OpenAI.
+
+
+## 2026-11-05 — FR / EN / ES
+
+FR : La file copie désormais `controls` et `requirements` avant attente, pour qu’une mutation de l’appelant ne modifie ni groupement ni politique d’une requête déjà admise. Priorité finie et délai1..300000ms requis. Signal AbortSignal conservé, sans nouvelle API fournisseur.
+
+EN: Queue now snapshots `controls` and `requirements` before waiting so caller mutation cannot change grouping or policy of admitted requests. Finite priority and1..300000ms timeout required. AbortSignal preserved; no new provider API.
+
+ES: Cola copia `controls` y `requirements` antes de esperar para impedir que mutaciones cambien agrupación o política de solicitudes admitidas. Prioridad finita y plazo1..300000ms. Conserva AbortSignal; sin API de proveedor nueva.

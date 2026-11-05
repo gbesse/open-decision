@@ -288,6 +288,9 @@ export class DecisionQueue {
 
   enqueue(request: DecisionRequest, options: QueueCallOptions = {}): Promise<DecisionResult & { compatibility?: CompatibilityReport }> {
     validateRequest(request);
+    assert(options.priority===undefined||Number.isFinite(options.priority),"FR: Priorite invalide / EN: Invalid priority / ES: Prioridad invalida");
+    assert(options.timeoutMs===undefined||(Number.isSafeInteger(options.timeoutMs)&&options.timeoutMs>0&&options.timeoutMs<=300000),"FR: Delai invalide / EN: Invalid timeout / ES: Plazo invalido");
+    options={...options,...(options.controls?{controls:structuredClone(options.controls)}:{}),...(options.requirements?{requirements:structuredClone(options.requirements)}:{})};
     assert(!this.#closed, "Decision queue is closed");
     assert(this.stats.pending < this.maxPending, "Decision queue is full");
     if (options.signal?.aborted) return Promise.reject(options.signal.reason ?? new Error("Decision cancelled"));
