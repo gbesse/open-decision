@@ -382,3 +382,11 @@ function queueKey(item: QueuedDecision): string {
 export function createDecisionQueue(options: DecisionQueueOptions): DecisionQueue {
   return new DecisionQueue(options);
 }
+
+export function providerWorkloadMatrix(providers:DecisionProvider[],requests:DecisionRequest[],requirements:Requirements={}){
+ const fail=():never=>{throw new TypeError('Charge invalide / Invalid workload / Carga inválida');};
+ if(!Array.isArray(providers)||!providers.length||providers.length>100||!Array.isArray(requests)||!requests.length||requests.length>1000)fail();
+ const names=providers.map(p=>p.capabilities.provider);if(new Set(names).size!==names.length)fail();for(const request of requests)validateRequest(request);
+ const rows=providers.map(provider=>{const reports=requests.map(request=>inspectCompatibility(provider.capabilities,request,requirements));return {provider:provider.capabilities.provider,reports,compatibleRequests:reports.filter(r=>r.compatible).length,coversEntireWorkload:reports.every(r=>r.compatible)};});
+ return {providers:rows,requestCount:requests.length,compatibleProviderNames:rows.filter(r=>r.coversEntireWorkload).map(r=>r.provider),providerCalls:0,providerSelected:false};
+}
