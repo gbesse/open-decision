@@ -94,3 +94,12 @@ FR : La file copie désormais `controls` et `requirements` avant attente, pour q
 EN: Queue now snapshots `controls` and `requirements` before waiting so caller mutation cannot change grouping or policy of admitted requests. Finite priority and1..300000ms timeout required. AbortSignal preserved; no new provider API.
 
 ES: Cola copia `controls` y `requirements` antes de esperar para impedir que mutaciones cambien agrupación o política de solicitudes admitidas. Prioridad finita y plazo1..300000ms. Conserva AbortSignal; sin API de proveedor nueva.
+
+
+## 2026-11-12 — FR / EN / ES
+
+FR : Préparer une matrice de compatibilité de toute une charge avant de choisir un fournisseur, sans appel réseau.
+
+EN: Inspect whole-workload provider compatibility before selection without network calls.
+
+ES: Inspeccionar compatibilidad del proveedor para toda una carga antes de seleccionar sin llamadas de red.
